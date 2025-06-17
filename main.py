@@ -9,34 +9,34 @@ import telegram
 # === Konfigurasi ===
 PAIRS = ["vra_idr", "shib_idr", "doge_idr", "trx_idr", "jasmy_idr", "sun_idr", "sundog_idr", "pepe_idr", "bnb_idr", "avax_idr", "matic_idr", "ada_idr", "dot_idr", "sol_idr", "eth_idr", "xrp_idr", "bch_idr", "ltc_idr", "bonk_idr", "floki_idr", "zrx_idr", "alt_idr", "sand_idr", "zkj_idr", "cake_idr", "fart_idr", "fanCoin_idr", "chill_idr", "token_idr", "giga_idr", "alitas_idr", "alpaca_idr", "atlas_idr", "wozx_idr", "ignis_idr", "nxt_idr", "bts_idr", "abyss_idr"]
 INTERVALS = ["1m", "5m", "15m", "1h", "4h", "1d"]
-TELEGRAM_TOKEN = "7950867729:AAE8KCxGgFhZMr6qUpMl1baZ8IdALf9akLk"
-CHAT_ID = "1144241819"
 INTERVAL_SECONDS = 60
 CANDLES = 100
 
-bot = telegram.Bot(token=TELEGRAM_TOKEN)
+TELEGRAM_TOKEN = "7950867729:AAE8KCxGgFhZMr6qUpMl1baZ8IdALf9akLk"
+CHAT_ID = "1144241819"
 
+bot = telegram.Bot(token=TELEGRAM_TOKEN)
 app = Flask(__name__)
+
 @app.route("/")
 def home():
-    return "📡 Bot Analisa Tren Aktif!"
+    return "📡 Bot Analisa Tren Indodax Aktif!"
 
-# === Ambil Data Candle ===
+# === Ambil data OHLCV dari Indodax ===
 def fetch_ohlcv(pair, interval):
     try:
-        url = f"https://indodax.com/api/{pair}_ticker"
-        kline_url = f"https://indodax.com/api/chart/{pair}/{interval}"
-        r = requests.get(kline_url)
+        url = f"https://indodax.com/api/chart/{pair}/{interval}"
+        r = requests.get(url)
         data = r.json()["chart"]
         df = pd.DataFrame(data)
         df.columns = ["timestamp", "open", "high", "low", "close", "volume"]
         df = df.astype(float)
         return df.tail(CANDLES)
     except Exception as e:
-        print(f"[{pair} - {interval}] Gagal ambil data: {e}")
+        print(f"[ERROR] {pair}-{interval}: {e}")
         return None
 
-# === Analisa Sinyal ===
+# === Analisa teknikal ===
 def analyze(df):
     df["rsi"] = ta.rsi(df["close"], length=14)
     macd = ta.macd(df["close"])
@@ -55,27 +55,37 @@ def analyze(df):
 
     return signal
 
-# === Monitor Tiap Pair dan Interval ===
+# === Fungsi monitoring ===
 def monitor(pair, interval):
     while True:
-        df = fetch_ohlcv(pair, interval)
-        if df is not None:
-            signal = analyze(df)
-            if signal:
-                msg = (
-                    f"📊 Sinyal {signal}\n"
-                    f"⏰ Interval: {interval}\n"
-                    f"💱 Pair: {pair.upper()}\n"
-                    f"📈 Harga: {df.iloc[-1]['close']}\n"
-                    f"🔗 https://indodax.com/market/{pair}"
-                )
-                bot.send_message(chat_id=CHAT_ID, text=msg)
+        try:
+            df = fetch_ohlcv(pair, interval)
+            if df is not None:
+                signal = analyze(df)
+                if signal:
+                    msg = (
+                        f"📊 Sinyal {signal}\n"
+                        f"⏰ Interval: {interval}\n"
+                        f"💱 Pair: {pair.upper()}\n"
+                        f"📈 Harga: {df.iloc[-1]['close']}\n"
+                        f"🔗 https://indodax.com/market/{pair}"
+                    )
+                    bot.send_message(chat_id=CHAT_ID, text=msg)
+        except Exception as e:
+            print(f"[{pair}-{interval}] ERROR: {e}")
         time.sleep(INTERVAL_SECONDS)
 
-# === Jalankan Semua Thread ===
+# === Jalankan semua monitor ===
 for pair in PAIRS:
     for interval in INTERVALS:
         threading.Thread(target=monitor, args=(pair, interval), daemon=True).start()
 
+# === Kirim notifikasi awal ===
+try:
+    bot.send_message(chat_id=CHAT_ID, text="✅ Bot pemantau tren BUY/SELL sudah aktif di Render.")
+except Exception as e:
+    print(f"❌ Gagal kirim notifikasi awal: {e}")
+
+# === Jalankan Flask server ===
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
